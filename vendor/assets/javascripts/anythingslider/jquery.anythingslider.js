@@ -1,5 +1,5 @@
 /*
-	AnythingSlider v1.7.23
+	AnythingSlider v1.7.26
 	Original by Chris Coyier: http://css-tricks.com
 	Get the latest version: https://github.com/ProLoser/AnythingSlider
 
@@ -84,8 +84,6 @@
 
 			base.updateSlider();
 
-			base.$lastPage = base.$currentPage;
-
 			// Get index (run time) of this slider on the page
 			base.runTimes = $('div.anythingSlider').index(base.$wrapper) + 1;
 			base.regex = new RegExp('panel' + base.runTimes + '-(\\d+)', 'i'); // hash tag regex
@@ -111,6 +109,8 @@
 
 			// If a hash can not be used to trigger the plugin, then go to start panel
 			base.setCurrentPage(base.gotoHash() || o.startPage, false);
+
+			base.$lastPage = base.$targetPage = base.$currentPage;
 
 			// Hide/Show navigation & play/stop controls
 			base.slideControls(false);
@@ -171,6 +171,7 @@
 
 		// called during initialization & to update the slider if a panel is added or deleted
 		base.updateSlider = function(){
+			var t;
 			// needed for updating the slider
 			base.$el.children('.cloned').remove();
 			base.$nav.empty();
@@ -229,7 +230,13 @@
 					.css('width', base.getDim(base.currentPage)[0])
 					.add(base.$items).css('height', base.height);
 			} else {
-				base.$win.load(function(){ base.setDimensions(); }); // set dimensions after all images load
+				base.$win.load(function(){
+					// set dimensions after all images load
+					base.setDimensions();
+					// make sure the outer wrapper is set properly
+					t = base.getDim(base.currentPage);
+					base.$wrapper.css({ width: t[0], height: t[1] });
+				});
 			}
 
 			if (base.currentPage > base.pages) {
@@ -243,33 +250,35 @@
 		// Creates the numbered navigation links
 		base.buildNavigation = function() {
 			if (o.buildNavigation && (base.pages > 1)) {
-				var t, $a;
-				base.$items.filter(':not(.cloned)').each(function(i) {
-					var index = i + 1;
-					t = ((index === 1) ? 'first' : '') + ((index === base.pages) ? 'last' : '');
-					$a = $('<a class="panel' + index + '" href="#"><span></span></a>').wrap('<li class="' + t + '" />');
-					base.$nav.append($a.parent()); // use $a.parent() so it will add <li> instead of only the <a> to the <ul>
-
+				var a, c, i, t, $li;
+				base.$items.filter(':not(.cloned)').each(function(j){
+					$li = $('<li/>');
+					i = j + 1;
+					c = o.tooltipClass + ((i === 1) ? ' first' : '') + ((i === base.pages) ? ' last' : '');
+					a = '<a class="panel' + i + '" href="#"><span>@</span></a>';
 					// If a formatter function is present, use it
 					if ($.isFunction(o.navigationFormatter)) {
-						t = o.navigationFormatter(index, $(this));
-						// Add formatting to title attribute if text is hidden
-						if ($a.find('span').css('visibility') === 'hidden') { $a.addClass(o.tooltipClass).attr('title', t); }
-					} else {
-						t = index;
-					}
-
-					$a
-					.bind(o.clickControls, function(e) {
-						if (!base.flag && o.enableNavigation) {
-							// prevent running functions twice (once for click, second time for focusin)
-							base.flag = true; setTimeout(function(){ base.flag = false; }, 100);
-							base.gotoPage(index);
-							if (o.hashTags) { base.setHash(index); }
+						t = o.navigationFormatter(i, $(this));
+						if (typeof(t) === "string") {
+							$li.html(a.replace(/@/,t));
+						} else {
+							$li = $('<li/>', t);
 						}
-						e.preventDefault();
-					})
-					.find('span').html(t);
+					} else {
+						$li.html(a.replace(/@/,i));
+					}
+					$li
+					.appendTo(base.$nav)
+					.addClass(c)
+					.data('index', i);
+				});
+				base.$nav.children('li').bind(o.clickControls, function(e) {
+					if (!base.flag && o.enableNavigation) {
+						// prevent running functions twice (once for click, second time for focusin)
+						base.flag = true; setTimeout(function(){ base.flag = false; }, 100);
+						base.gotoPage( $(this).data('index') );
+					}
+					e.preventDefault();
 				});
 
 				// Add navigation tab scrolling - use !! in case someone sets the size to zero
@@ -284,7 +293,7 @@
 					base.navWidths = base.$nav.find('li').map(function(){
 						return $(this).innerWidth() + Math.ceil(parseInt($(this).find('span').css('left'),10)/2 || 0);
 					}).get();
-					base.navLeft = 1;
+					base.navLeft = base.currentPage;
 					// add 5 pixels to make sure the tabs don't wrap to the next line
 					base.$nav.width( base.navWidth( 1, base.pages + 1 ) + 5 );
 					base.$controls.find('.anythingNavWindow')
@@ -355,7 +364,10 @@
 			base.$back.appendTo( (o.appendBackTo && $(o.appendBackTo).length) ? $(o.appendBackTo) : base.$wrapper );
 			base.$forward.appendTo( (o.appendForwardTo && $(o.appendForwardTo).length) ? $(o.appendForwardTo) : base.$wrapper );
 
-			base.$arrowWidth = base.$forward.width(); // assuming the left & right arrows are the same width - used for toggle
+			base.arrowWidth = base.$forward.width(); // assuming the left & right arrows are the same width - used for toggle
+			base.arrowRight = parseInt(base.$forward.css('right'), 10);
+			base.arrowLeft = parseInt(base.$back.css('left'), 10);
+
 		};
 
 		// Creates the Start/Stop button
@@ -496,7 +508,7 @@
 			base.currentPage = ( page > base.pages ) ? base.pages : ( page < 1 ) ? 1 : base.currentPage;
 			base.$currentPage = base.$items.eq(base.currentPage - base.adj);
 			base.targetPage = (page === 0) ? base.pages : (page > base.pages) ? 1 : page;
-			base.$targetPage = base.$items.eq( base.targetPage - 1 );
+			base.$targetPage = base.$items.eq( base.targetPage - base.adj);
 			time = time || o.animationTime;
 			// don't trigger events when time < 0 - to prevent FX from firing multiple times on page resize
 			if (time >= 0) { base.$el.trigger('slide_init', base); }
@@ -512,15 +524,18 @@
 
 			// delay starting slide animation
 			setTimeout(function(d){
+				var p, empty = true;
 				// resize slider if content size varies
 				if (!o.resizeContents) {
 					// animating the wrapper resize before the window prevents flickering in Firefox
-					d = base.getDim(page);
-					base.$wrapper.filter(':not(:animated)').animate(
-						// prevent animating a dimension to zero
-						{ width: d[0] || base.width, height: d[1] || base.height },
-						{ queue: false, duration: (time < 0 ? 0 : time), easing: o.easing }
-					);
+					// don't animate the dimension if it hasn't changed - fix for issue #264
+					p = base.getDim(page); d = {};
+					// prevent animating a dimension to zero
+					if (base.$wrapper.width() !== p[0]) { d.width = p[0] || base.width; empty = false; }
+					if (base.$wrapper.height() !== p[1]) { d.height = p[1] || base.height; empty = false; }
+					if (!empty) {
+						base.$wrapper.filter(':not(:animated)').animate(d, { queue: false, duration: (time < 0 ? 0 : time), easing: o.easing });
+					}
 				}
 				d = {};
 				d[base.dir] = -base.panelSize[(o.infiniteSlides && base.pages > 1) ? page : page - 1][2];
@@ -546,6 +561,8 @@
 			base.$items.removeClass('activePage').eq(page - base.adj).addClass('activePage');
 
 			if (!base.hovered) { base.slideControls(false); }
+
+			if (o.hashTags) { base.setHash(page); }
 
 			if (time >= 0) { base.$el.trigger('slide_complete', base); }
 			// callback from external slide control: $('#slider').anythingSlider(4, function(slider){ })
@@ -643,8 +660,8 @@
 			}
 			if (o.buildArrows && o.toggleArrows) {
 				if (!base.hovered && base.playing) { sign = 1; op = 0; } // don't animate arrows during slideshow
-				base.$forward.stop(true,true).delay(t1).animate({ right: sign * base.$arrowWidth, opacity: op }, o.animationTime/2);
-				base.$back.stop(true,true).delay(t1).animate({ left: sign * base.$arrowWidth, opacity: op }, o.animationTime/2);
+				base.$forward.stop(true,true).delay(t1).animate({ right: base.arrowRight + (sign * base.arrowWidth), opacity: op }, o.animationTime/2);
+				base.$back.stop(true,true).delay(t1).animate({ left: base.arrowLeft + (sign * base.arrowWidth), opacity: op }, o.animationTime/2);
 			}
 		};
 
@@ -673,7 +690,7 @@
 			if (o.buildStartStop) {
 				base.$startStop.toggleClass('playing', playing).find('span').html( playing ? o.stopText : o.startText );
 				// add button text to title attribute if it is hidden by text-indent
-				if (parseInt(base.$startStop.find('span').css('text-indent'),10) < 0) {
+				if ( base.$startStop.find('span').css('visibility') === "hidden" ) {
 					base.$startStop.addClass(o.tooltipClass).attr( 'title', playing ? o.stopText : o.startText );
 				}
 			}
